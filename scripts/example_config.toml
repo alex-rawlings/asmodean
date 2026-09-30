@@ -1,0 +1,103 @@
+# Example asmodean scattering experiment: an SMBH binary at the centre of a
+# Hernquist galaxy, hit by a third black hole on a hyperbolic orbit.
+#
+#   python scripts/make_system.py scripts/example_config.toml -o setup.npz
+#   python scripts/run_scattering.py setup.npz -o result.npz
+#   python scripts/analyse.py result.npz --figdir figures
+#
+# Units are physical: by default Gadget's kpc, 1e10 Msun, km/s (time unit
+# kpc/(km/s) ~ 0.978 Gyr). Angles are in degrees.
+
+[units]
+G = 43009.1                 # gravitational constant in these units (default)
+
+[potential]
+# type: "hernquist" -- lanfear SCF fit to a synthetic Hernquist sphere (demo)
+#       "lanfear"   -- build a lanfear potential from a Gadget snapshot
+#       "file"      -- a potential saved with asmodean.ExternalPotential.save
+#       "none"      -- no background potential
+type = "hernquist"
+mass = 10.0                 # total mass (1e11 Msun)
+scale_radius = 1.0          # Hernquist scale radius (kpc)
+n_particles = 200000
+n_max = 12
+l_max = 0                   # spherical
+seed = 1
+
+# --- type = "lanfear" options (the figure is never rotated) ---
+# snapshot = "snapshot.hdf5"
+# basis = "scf"             # "scf", "disc" or "multi"
+# n_max = 18                # scf
+# l_max = 6                 # scf
+# n_radial = 8              # disc
+# n_vert = 3                # disc
+# centre = "bh"             # passed to lanfear's ParticleSystem.prepare
+# bh_softening = 1e-3       # lanfear BH softening (scale-radius units)
+# include_black_holes = false      # drop the snapshot BHs from the potential...
+# bodies_from_black_holes = true   # ...and integrate them as bodies instead
+# bh_body_softening = 1e-5         # Plummer-equivalent softening of those bodies
+# validate = true           # print lanfear's fit-vs-direct-sum check
+# [potential.components.STAR]      # basis = "multi": one table per species
+# basis = "disc"
+# n_radial = 8
+# [potential.components.DM]
+# basis = "scf"
+# n_max = 18
+# l_max = 6
+
+[friction]
+enabled = true
+source = "potential"        # "potential" (isotropic Jeans), "particles" (snapshot), "constant"
+mode = "system"             # "system": shared in proportion to mass; or "individual"
+coulomb_logarithm = 3.0     # or "variable"
+r_min = 1e-4                # tabulated range (kpc)
+r_max = 100.0
+n_bins = 64
+central_mass = "bodies"     # source = "potential": add the bodies' mass at the centre to
+                            # the Jeans equation, so the dispersion near the black holes
+                            # is realistic (a number, or "bodies")
+# density = 1.0             # source = "constant"
+# dispersion = 100.0
+
+# Bodies: any mix of [[body]], [[binary]] and [[incoming]] tables (at most 10
+# bodies in total). Softening is the Plummer-equivalent Gadget softening.
+[[binary]]
+labels = ["BH1", "BH2"]
+masses = [0.01, 0.01]       # 1e8 Msun each
+semimajor_axis = 0.005      # 5 pc
+eccentricity = 0.3
+inclination_deg = 0.0
+node_deg = 0.0
+argument_deg = 0.0
+true_anomaly_deg = 0.0
+centre_position = [0.0, 0.0, 0.0]
+centre_velocity = [0.0, 0.0, 0.0]
+softening = 1e-5
+
+[[incoming]]
+label = "BH3"
+mass = 0.005
+v_infinity = 50.0           # km/s, relative to the binary
+impact_parameter = 0.003
+distance = 0.1              # initial separation from the binary
+target = ["BH1", "BH2"]
+orientation_deg = [30.0, 0.0, 0.0]   # [inclination, node, argument]
+softening = 1e-5
+
+# [[body]]
+# label = "BH4"
+# mass = 0.001
+# position = [0.5, 0.0, 0.0]
+# velocity = [0.0, 150.0, 0.0]
+# softening = 1e-5
+
+[integration]
+n_periods = 5000
+period = "binary"           # a time, or "internal", "binary", "circular"
+n_samples = 20000
+collision_distance = 1e-5   # merge pairs closer than this
+ejection_radius = 0.05      # remove escaped bodies beyond this distance...
+ejection_reference = "system"   # ...from the other bodies' centre of mass ("centre": from the origin)
+rel_tol = 1e-11
+abs_tol = 1e-14
+stepper = "rkf78"

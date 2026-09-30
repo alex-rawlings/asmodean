@@ -1,0 +1,56 @@
+name: Tests
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Checkout lanfear (analytical potentials + C++ headers)
+        uses: actions/checkout@v4
+        with:
+          repository: alex-rawlings/lanfear
+          path: lanfear-src
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install system dependencies (Boost headers, OpenMP via GCC)
+        run: sudo apt-get update && sudo apt-get install -y libboost-dev cmake
+
+      - name: Build and install lanfear
+        run: |
+          pip install "./lanfear-src[build]"
+          (cd lanfear-src && ./build.sh)
+          pip install -e ./lanfear-src
+
+      - name: Install asmodean build and dev dependencies
+        run: pip install ".[build,dev]" pytest-cov
+
+      - name: Build the C++ extension
+        run: LANFEAR_ROOT="$PWD/lanfear-src" ./build.sh
+
+      - name: Run the C++ check
+        run: ./bin/test_core
+
+      - name: Run tests with coverage
+        run: |
+          pip install -e .
+          pytest tests --cov=asmodean --cov-report=term-missing --cov-report=xml
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml

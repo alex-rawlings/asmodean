@@ -1,0 +1,25 @@
+build/
+bin/
+asmodean/_core*.so
+__pycache__/
+*.pyc
+*.o
+*.hdf5
+*.npz
+*.out
+
+# Figures written by the test suite and scripts
+tests/figures/
+figures/
+*.png
+!/docs/figs/*.png
+
+# AI assists
+CLAUDE.md
+AI_output/**
+
+# personal submission scripts
+scripts/*.sh
+
+# built docs (source lives in docs/, this is the generated static site)
+docs/_build/

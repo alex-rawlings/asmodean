@@ -1,0 +1,169 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+# NOTE: asmodean contains a compiled C++/pybind11 extension (`asmodean/_core`).
+# Build it first with `./build.sh` (CMake + Boost + pybind11 from `load_py313`,
+# plus the header-only lanfear C++ core); the resulting `asmodean/_core*.so` is
+# then packaged by the wheel build below. An editable install
+# (`pip install -e .`) imports the extension in place.
+
+[project]
+name = "asmodean"
+dynamic = ["version"]                     # read from asmodean/__init__.py
+requires-python = ">=3.11"               # tomllib (driver scripts)
+
+authors = [
+    {name = "Alex Rawlings", email = "rawlings@mpa-garching.mpg.de"}
+]
+maintainers = [
+    {name = "Alex Rawlings", email = "rawlings@mpa-garching.mpg.de"}
+]
+description = "ASMODEAN: Analytic Scattering Modelling and Orbital Dynamics with External Acceleration and N-body interactions. Softened few-body scattering experiments in lanfear analytical potentials, with mergers, ejections and dynamical friction"
+readme = "README.md"
+license = {text = "GNU General Public License v3"}
+keywords = [
+    "astronomy",
+    "galaxy-dynamics",
+    "few-body",
+    "scattering",
+    "black-holes",
+    "dynamical-friction",
+]
+
+dependencies = [
+    "numpy>=1.22",
+    "matplotlib>=3.5",                     # result plotting helpers
+]
+
+# Optional dependencies for specific use cases
+[project.optional-dependencies]
+# lanfear builds the analytical potentials (and provides the C++ headers the
+# extension is compiled against)
+lanfear = [
+    "lanfear @ git+https://github.com/alex-rawlings/lanfear",
+]
+# Tools needed to compile the C++ extension via ./build.sh
+build = [
+    "pybind11>=2.10",
+    "cmake>=3.15",
+]
+# Development
+dev = [
+    "ruff==0.7.4",
+    "pre-commit",
+    "pytest",
+    "pytest-cov",
+    "scipy>=1.8.0",                        # reference ODE solve in the friction tests
+]
+# Builds the docs/ Sphinx sources
+docs = [
+    "sphinx>=7.0",
+    "sphinx-markdown-builder>=0.6",
+    "furo",
+]
+# Everything: pull in every optional dependency above via `pip install -e ".[all]"`
+all = [
+    "asmodean[lanfear]",
+    "asmodean[build]",
+    "asmodean[dev]",
+    "asmodean[docs]",
+]
+
+[project.urls]
+Repository = "https://github.com/alex-rawlings/asmodean"
+
+[tool.hatch.version]
+path = "asmodean/__init__.py"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["asmodean"]
+# Force-include the CMake-built extension even though it is git-ignored.
+artifacts = ["asmodean/*.so"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["asmodean"]
+omit = ["asmodean/_core*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+]
+
+[tool.ruff]
+# Exclude a variety of commonly ignored directories.
+exclude = [
+    ".bzr",
+    ".direnv",
+    ".eggs",
+    ".git",
+    ".git-rewrite",
+    ".hg",
+    ".ipynb_checkpoints",
+    ".mypy_cache",
+    ".nox",
+    ".pants.d",
+    ".pyenv",
+    ".pytest_cache",
+    ".pytype",
+    ".ruff_cache",
+    ".svn",
+    ".tox",
+    ".venv",
+    ".vscode",
+    "__pypackages__",
+    "_build",
+    "buck-out",
+    "build",
+    "dist",
+    "node_modules",
+    "site-packages",
+    "venv",
+    "thirdparty",
+]
+
+# Same as Black.
+line-length = 88
+indent-width = 4
+
+# Assume Python 3.9
+target-version = "py39"
+
+[tool.ruff.lint]
+# Enable Pyflakes (`F`) and a subset of the pycodestyle (`E`)  codes by default.
+# Unlike Flake8, Ruff doesn't enable pycodestyle warnings (`W`) or
+# McCabe complexity (`C901`) by default.
+select = ["E4", "E7", "E9", "F"]
+ignore = [
+    "F403",  # "from module import *" used
+    "E203",  # "whitespace before ',', ';', or ':'"
+    "E402",  # "Module level import not at top of file" (breaks paper-specific matplotlibrc import)
+    "E731",  # "do not assign a lambda expression, use a def"
+]
+
+# Allow fix for all enabled rules (when `--fix`) is provided.
+fixable = ["ALL"]
+unfixable = []
+
+# Allow unused variables when underscore-prefixed.
+dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+
+[tool.ruff.format]
+# Like Black, use double quotes for strings.
+quote-style = "double"
+
+# Like Black, indent with spaces, rather than tabs.
+indent-style = "space"
+
+# Like Black, respect magic trailing commas.
+skip-magic-trailing-comma = false
+
+# Like Black, automatically detect the appropriate line ending.
+line-ending = "auto"
