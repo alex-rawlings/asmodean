@@ -123,3 +123,6 @@ pull request and push to `main`.
 - Hernquist & Ostriker 1992, ApJ 386, 375; Miyamoto & Nagai 1975, PASJ 27, 533
   (the lanfear potentials).
 - Hernquist 1990, ApJ 356, 359 (Hernquist model, used in the tests).
+
+[![Ruff PR Check](https://github.com/alex-rawlings/asmodean/actions/workflows/ruff.yml/badge.svg)](https://github.com/alex-rawlings/asmodean/actions/workflows/ruff.yml)
+[![Tests](https://github.com/alex-rawlings/asmodean/actions/workflows/tests.yml/badge.svg)](https://github.com/alex-rawlings/asmodean/actions/workflows/tests.yml)
