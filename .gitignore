@@ -13,6 +13,7 @@ tests/figures/
 figures/
 *.png
 !/docs/figs/*.png
+!/logo/*.png
 
 # AI assists
 CLAUDE.md
