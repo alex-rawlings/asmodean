@@ -560,7 +560,7 @@ class ScatteringResult:
         ax=None,
         mark_events: bool = True,
         colour_by_time: bool = True,
-        cmap: str = "viridis",
+        cmap: str = "cividis",
     ):
         """Projected trajectories of every body, optionally coloured by time.
 
@@ -661,7 +661,9 @@ class ScatteringResult:
                         np.isfinite(xy[:-1]), axis=1
                     )
                     segments = np.stack([xy[:-1], xy[1:]], axis=1)[ok]
-                    mapped = LineCollection(segments, cmap=colourmap, norm=norm, lw=0.8)
+                    mapped = LineCollection(
+                        segments, cmap=colourmap, norm=norm, lw=0.8, alpha=0.7
+                    )
                     mapped.set_array(t_mid[ok])
                     axis.add_collection(mapped)
                     axis.plot(
