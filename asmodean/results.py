@@ -661,7 +661,9 @@ class ScatteringResult:
                         np.isfinite(xy[:-1]), axis=1
                     )
                     segments = np.stack([xy[:-1], xy[1:]], axis=1)[ok]
-                    mapped = LineCollection(segments, cmap=colourmap, norm=norm, lw=0.8, alpha=0.7)
+                    mapped = LineCollection(
+                        segments, cmap=colourmap, norm=norm, lw=0.8, alpha=0.7
+                    )
                     mapped.set_array(t_mid[ok])
                     axis.add_collection(mapped)
                     axis.plot(
