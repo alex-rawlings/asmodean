@@ -69,13 +69,26 @@ a physical time or is estimated from the initial conditions
 It stops earlier if every body has merged into one, or if at most one body is
 left after an ejection (see :doc:`physics`). ``result.stop_reason`` says which.
 
+To stop as soon as a black hole binary becomes hard (``a <= G mu / (4
+sigma^2)``), give the background dispersion -- a velocity, or ``"friction"`` to
+read it from the dynamical-friction profile at the binary's position:
+
+.. code-block:: python
+
+   result = am.integrate(bodies, pot, friction=friction, n_periods=2000,
+                         period="binary", hard_binary_dispersion="friction")
+   if result.stop_reason == "hard_binary":
+       ev = result.hard_binary   # the pair (ev.body, ev.partner)
+       print(ev.value, ev.eccentricity)   # semimajor axis and eccentricity
+
 Reading a result
 ----------------
 
 A :class:`~asmodean.ScatteringResult` holds uniformly sampled trajectories
 (``times``, ``positions``, ``velocities``, ``masses``; NaN once a body has
 merged away or been ejected), the :class:`~asmodean.Event` list
-(``result.mergers``, ``result.ejections``), each body's ``status`` and final
+(``result.mergers``, ``result.ejections``, ``result.hard_binary``), each
+body's ``status`` and final
 state, and the energy bookkeeping. ``result.energy_error()`` is the relative
 error of the conserved energy budget, the check that the integration was
 accurate.

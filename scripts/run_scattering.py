@@ -19,6 +19,11 @@ def period_arg(value):
         return value
 
 
+def hard_binary_arg(value):
+    """Parse --hard-binary-dispersion: a velocity or 'friction'."""
+    return value if value == "friction" else float(value)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument(type=str, help="setup file from make_system.py", dest="setup")
@@ -36,6 +41,12 @@ def main():
     ap.add_argument("--ejection-radius", type=float, help="ejection distance")
     ap.add_argument(
         "--ejection-reference", choices=["system", "centre"], help="ejection reference"
+    )
+    ap.add_argument(
+        "--hard-binary-dispersion",
+        type=hard_binary_arg,
+        help="stop once a binary is hard for this 1D dispersion ('friction': "
+        "from the friction profile)",
     )
     ap.add_argument("--rel-tol", type=float, help="relative tolerance")
     ap.add_argument("--abs-tol", type=float, help="absolute tolerance (internal units)")
@@ -59,6 +70,7 @@ def main():
             "collision_distance",
             "ejection_radius",
             "ejection_reference",
+            "hard_binary_dispersion",
             "rel_tol",
             "abs_tol",
             "stepper",

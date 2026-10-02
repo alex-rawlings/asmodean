@@ -157,7 +157,8 @@ py::dict result_to_dict(const asmodean::ScatteringResult& r) {
     d["energy_removed"] = as_array(r.energy_removed, {n_out});
     d["friction_work"] = as_array(r.friction_work, {n_out});
 
-    py::array_t<double> ev_time(n_ev), ev_mass(n_ev), ev_value(n_ev);
+    py::array_t<double> ev_time(n_ev), ev_mass(n_ev), ev_value(n_ev),
+        ev_eccentricity(n_ev);
     py::array_t<int> ev_type(n_ev), ev_body(n_ev), ev_partner(n_ev);
     py::array_t<double> ev_state({n_ev, static_cast<py::ssize_t>(6)});
     for (py::ssize_t i = 0; i < n_ev; ++i) {
@@ -168,6 +169,7 @@ py::dict result_to_dict(const asmodean::ScatteringResult& r) {
         ev_partner.mutable_data()[i] = e.partner;
         ev_mass.mutable_data()[i] = e.mass;
         ev_value.mutable_data()[i] = e.value;
+        ev_eccentricity.mutable_data()[i] = e.eccentricity;
         for (int c = 0; c < 6; ++c) ev_state.mutable_data()[6 * i + c] = e.state[c];
     }
     d["event_time"] = ev_time;
@@ -177,6 +179,7 @@ py::dict result_to_dict(const asmodean::ScatteringResult& r) {
     d["event_mass"] = ev_mass;
     d["event_state"] = ev_state;
     d["event_value"] = ev_value;
+    d["event_eccentricity"] = ev_eccentricity;
 
     d["status"] = py::array_t<int>(static_cast<py::ssize_t>(r.status.size()),
                                    r.status.data());
@@ -243,8 +246,9 @@ PYBIND11_MODULE(_core, m) {
     m.attr("SPLINE_TO_PLUMMER") = asmodean::kSplineToPlummer;
     m.attr("STOP_REASONS") = std::vector<std::string>{
         "time_limit", "all_merged", "bodies_ejected", "step_limit",
-        "integration_error"};
-    m.attr("EVENT_TYPES") = std::vector<std::string>{"merger", "ejection"};
+        "integration_error", "hard_binary"};
+    m.attr("EVENT_TYPES") =
+        std::vector<std::string>{"merger", "ejection", "hard_binary"};
     m.attr("BODY_STATUSES") = std::vector<std::string>{"active", "merged", "ejected"};
 
     // --- ExternalPotential ---
@@ -358,7 +362,10 @@ PYBIND11_MODULE(_core, m) {
         .def_readwrite("kernel_step_factor", &IntegrationSettings::kernel_step_factor)
         .def_readwrite("max_steps", &IntegrationSettings::max_steps)
         .def_readwrite("stepper", &IntegrationSettings::stepper)
-        .def_readwrite("record_trajectory", &IntegrationSettings::record_trajectory);
+        .def_readwrite("record_trajectory", &IntegrationSettings::record_trajectory)
+        .def_readwrite("hard_binary", &IntegrationSettings::hard_binary)
+        .def_readwrite("hard_binary_dispersion",
+                       &IntegrationSettings::hard_binary_dispersion);
 
     // --- integration ---
     m.def("integrate", &integrate_py, py::arg("potential"), py::arg("masses"),

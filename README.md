@@ -29,7 +29,9 @@ The pipeline is:
    * **Ejected** bodies (escaped beyond an ejection radius) are removed and no
      longer integrated.
    * The run **stops** at a maximum number of periods, when every body has
-     merged into one, or when at most one body is left after ejections.
+     merged into one, when at most one body is left after ejections, or
+     (optionally) when a black hole binary becomes **hard**,
+     `a <= G mu / (4 sigma^2)`.
 4. **Save** the trajectories, events (mergers, ejections) and energy
    bookkeeping, and **analyse** them: final binaries and their orbital elements,
    outcome classification (merger / flyby / exchange / ionisation) and figures.
@@ -123,6 +125,8 @@ pull request and push to `main`.
 - Hernquist & Ostriker 1992, ApJ 386, 375; Miyamoto & Nagai 1975, PASJ 27, 533
   (the lanfear potentials).
 - Hernquist 1990, ApJ 356, 359 (Hernquist model, used in the tests).
+- Merritt 2013, *Dynamics and Evolution of Galactic Nuclei*, ch. 8 (hard-binary
+  semimajor axis).
 
 [![Ruff PR Check](https://github.com/alex-rawlings/asmodean/actions/workflows/ruff.yml/badge.svg)](https://github.com/alex-rawlings/asmodean/actions/workflows/ruff.yml)
 [![Tests](https://github.com/alex-rawlings/asmodean/actions/workflows/tests.yml/badge.svg)](https://github.com/alex-rawlings/asmodean/actions/workflows/tests.yml)

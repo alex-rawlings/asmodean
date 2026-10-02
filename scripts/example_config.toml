@@ -98,6 +98,7 @@ n_samples = 20000
 collision_distance = 1e-5   # merge pairs closer than this
 ejection_radius = 0.05      # remove escaped bodies beyond this distance...
 ejection_reference = "system"   # ...from the other bodies' centre of mass ("centre": from the origin)
+# hard_binary_dispersion = "friction"   # stop once a pair is hard, a <= G mu / (4 sigma^2); sigma a velocity or "friction"
 rel_tol = 1e-11
 abs_tol = 1e-14
 stepper = "rkf78"

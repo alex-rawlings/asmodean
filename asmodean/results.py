@@ -2,7 +2,8 @@
 
 A :class:`ScatteringResult` holds, in physical units, the uniformly sampled
 trajectory of every body (NaN once a body has merged away or been ejected), the
-list of :class:`Event` s (mergers and ejections), each body's final state, the
+list of :class:`Event` s (mergers, ejections and the hard-binary stop), each
+body's final state, the
 energy bookkeeping and why the integration stopped. It saves to and loads from
 a ``.npz`` archive, and draws the basic diagnostic plots.
 
@@ -38,38 +39,74 @@ STOP_REASONS = [
     "bodies_ejected",
     "step_limit",
     "integration_error",
+    "hard_binary",
 ]
-EVENT_TYPES = ["merger", "ejection"]
+EVENT_TYPES = ["merger", "ejection", "hard_binary"]
 BODY_STATUSES = ["active", "merged", "ejected"]
+# Physical unit of Event.value for each event type, from (length, velocity).
+_EVENT_VALUE_UNITS = {
+    "merger": lambda L, V: V,
+    "ejection": lambda L, V: V**2,
+    "hard_binary": lambda L, V: L,
+}
+
+
+def _optional_float(npz, key: str, k: int) -> Optional[float]:
+    """Element ``k`` of a stored array, or None if absent (older files) or NaN.
+
+    Parameters
+    ----------
+    npz : numpy.lib.npyio.NpzFile
+        The open archive.
+    key : str
+        The array's key.
+    k : int
+        The element.
+
+    Returns
+    -------
+    value : float or None
+        The value.
+    """
+    if key not in npz:
+        return None
+    value = float(npz[key][k])
+    return value if np.isfinite(value) else None
 
 
 @dataclass(frozen=True)
 class Event:
-    """A merger or an ejection.
+    """A merger, an ejection, or a binary becoming hard.
 
     Parameters
     ----------
     time : float
         When it happened (physical time).
-    kind : {"merger", "ejection"}
+    kind : {"merger", "ejection", "hard_binary"}
         The event type.
     body : int
         Merger: the surviving body (the more massive of the pair), which now
-        carries the combined mass. Ejection: the ejected body.
+        carries the combined mass. Ejection: the ejected body. Hard binary:
+        the more massive member of the pair.
     partner : int or None
-        Merger: the body absorbed into ``body``. Ejection: None.
+        Merger: the body absorbed into ``body``. Ejection: None. Hard binary:
+        the other member of the pair.
     mass : float
-        Mass of ``body`` after the event.
+        Mass of ``body`` after the event (hard binary: the pair's total mass).
     position : numpy.ndarray
-        (3,) position of ``body`` just after the event (for a merger, the
-        pair's centre of mass).
+        (3,) position of ``body`` just after the event (for a merger or a hard
+        binary, the pair's centre of mass).
     velocity : numpy.ndarray
-        (3,) velocity of ``body`` just after the event.
+        (3,) velocity of ``body`` just after the event (likewise).
     value : float
         Merger: relative speed of the pair at contact (physical velocity).
         Ejection: the escape energy per unit mass that qualified it (positive;
         physical velocity^2), relative to the rest of the bodies or to the
-        potential centre depending on the ejection reference.
+        potential centre depending on the ejection reference. Hard binary:
+        the pair's semimajor axis (physical length).
+    eccentricity : float or None, optional
+        Hard binary: the pair's (Keplerian) eccentricity when it became hard.
+        None for other events.
     """
 
     time: float
@@ -80,6 +117,7 @@ class Event:
     position: np.ndarray
     velocity: np.ndarray
     value: float
+    eccentricity: Optional[float] = None
 
 
 @dataclass
@@ -108,7 +146,7 @@ class ScatteringResult:
     friction_work : numpy.ndarray
         (n_out,) cumulative work done by dynamical friction.
     events : list of Event
-        Mergers and ejections, in time order.
+        Mergers, ejections and the hard-binary stop, in time order.
     status : list of str
         Final status of each body: ``"active"``, ``"merged"`` or ``"ejected"``.
     merged_into : numpy.ndarray
@@ -211,6 +249,7 @@ class ScatteringResult:
             kind = EVENT_TYPES[int(raw["event_type"][k])]
             partner = int(raw["event_partner"][k])
             value = float(raw["event_value"][k])
+            eccentricity = float(raw["event_eccentricity"][k])
             events.append(
                 Event(
                     time=float(raw["event_time"][k]) * T,
@@ -220,7 +259,8 @@ class ScatteringResult:
                     mass=float(raw["event_mass"][k]) * M,
                     position=np.asarray(raw["event_state"][k, :3]) * L,
                     velocity=np.asarray(raw["event_state"][k, 3:]) * V,
-                    value=value * (V if kind == "merger" else V**2),
+                    value=value * _EVENT_VALUE_UNITS[kind](L, V),
+                    eccentricity=eccentricity if np.isfinite(eccentricity) else None,
                 )
             )
         final_state = np.asarray(raw["final_state"])
@@ -305,6 +345,19 @@ class ScatteringResult:
             Ejections, in time order.
         """
         return [e for e in self.events if e.kind == "ejection"]
+
+    @property
+    def hard_binary(self) -> Optional[Event]:
+        """The event that stopped the integration on a binary becoming hard.
+
+        Returns
+        -------
+        event : Event or None
+            The ``"hard_binary"`` event (``body`` and ``partner`` are the pair,
+            ``value`` its semimajor axis and ``eccentricity`` its
+            eccentricity), or None if no binary became hard.
+        """
+        return next((e for e in self.events if e.kind == "hard_binary"), None)
 
     @property
     def remaining(self) -> List[int]:
@@ -409,10 +462,17 @@ class ScatteringResult:
                     f"{self.labels[e.body]} (mass {e.mass:.4g}, contact speed "
                     f"{e.value:.4g})"
                 )
-            else:
+            elif e.kind == "ejection":
                 lines.append(
                     f"  t={e.time:.6g}: {self.labels[e.body]} ejected (mass "
                     f"{e.mass:.4g}, escape energy {e.value:.4g})"
+                )
+            else:
+                lines.append(
+                    f"  t={e.time:.6g}: {self.labels[e.body]}-"
+                    f"{self.labels[e.partner]} became a hard binary (mass "
+                    f"{e.mass:.4g}, semimajor axis {e.value:.4g}, eccentricity "
+                    f"{e.eccentricity:.4f})"
                 )
         lines.append(
             "  remaining: "
@@ -446,7 +506,7 @@ class ScatteringResult:
             "energy_removed": self.energy_removed,
             "friction_work": self.friction_work,
             "event_time": np.asarray([e.time for e in self.events], dtype=np.float64),
-            "event_kind": np.asarray([e.kind for e in self.events], dtype="U8"),
+            "event_kind": np.asarray([e.kind for e in self.events], dtype="U16"),
             "event_body": np.asarray([e.body for e in self.events], dtype=np.int64),
             "event_partner": np.asarray(
                 [-1 if e.partner is None else e.partner for e in self.events],
@@ -460,6 +520,13 @@ class ScatteringResult:
                 [e.velocity for e in self.events], dtype=np.float64
             ).reshape(n_ev, 3),
             "event_value": np.asarray([e.value for e in self.events], dtype=np.float64),
+            "event_eccentricity": np.asarray(
+                [
+                    np.nan if e.eccentricity is None else e.eccentricity
+                    for e in self.events
+                ],
+                dtype=np.float64,
+            ),
             "status": np.asarray(self.status),
             "merged_into": self.merged_into,
             "final_time": self.final_time,
@@ -518,6 +585,7 @@ class ScatteringResult:
                     position=np.asarray(npz["event_position"][k]),
                     velocity=np.asarray(npz["event_velocity"][k]),
                     value=float(npz["event_value"][k]),
+                    eccentricity=_optional_float(npz, "event_eccentricity", k),
                 )
                 for k in range(len(npz["event_time"]))
             ]

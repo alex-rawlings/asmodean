@@ -16,6 +16,8 @@ The integration stops at the first of (see :class:`IntegrationSettings`):
   lumped together);
 * at most one body left after an ejection (a body beyond ``ejection_radius``
   that has escaped is removed and no longer integrated);
+* optionally, a pair of bodies (a massive black hole binary) becoming hard
+  (see ``hard_binary_dispersion``);
 * the step limit, or an integration error.
 """
 
@@ -42,6 +44,8 @@ logger = get_logger(__name__)
 _SETUP_FORMAT = "asmodean-setup-1"
 _EJECTION_REFERENCES = {"system": 0, "centre": 1}
 _STEPPERS = {"rkf78": 0, "dopri5": 1}
+_HARD_BINARY_FIXED = 1
+_HARD_BINARY_FRICTION = 2
 PERIOD_CHOICES = ("internal", "binary", "circular")
 
 
@@ -99,6 +103,19 @@ class IntegrationSettings:
     record_trajectory : bool, optional
         Record the ``n_samples`` samples (default); if False only the initial
         and final states are kept (e.g. for large ensembles).
+    hard_binary_dispersion : float or "friction", optional
+        Stop once a pair of bodies -- assumed to be a massive black hole
+        binary -- becomes hard: bound, with semimajor axis
+        ``a <= a_h = G mu / (4 sigma^2)``, where ``mu`` is the pair's reduced
+        mass and ``sigma`` the background 1D velocity dispersion (Merritt
+        2013, ch. 8). A float is a fixed ``sigma`` (physical velocity);
+        ``"friction"`` takes ``sigma`` from the dynamical-friction profile at
+        the pair's centre-of-mass distance from the potential centre (needs
+        dynamical friction). None (default) disables the criterion. It is
+        tested after every step, and at the start: a binary that is already
+        hard stops the integration at once. The stop is recorded as a
+        ``"hard_binary"`` event, with the pair's semimajor axis and
+        eccentricity.
     """
 
     n_periods: float = 100.0
@@ -114,6 +131,7 @@ class IntegrationSettings:
     max_steps: int = 100_000_000
     stepper: str = "rkf78"
     record_trajectory: bool = True
+    hard_binary_dispersion: Optional[Union[float, str]] = None
 
     def __post_init__(self) -> None:
         """Validate the settings.
@@ -143,6 +161,17 @@ class IntegrationSettings:
             value = getattr(self, name)
             if value is not None and not (value > 0):
                 raise ValueError(f"{name} must be positive or None, got {value}")
+        sigma = self.hard_binary_dispersion
+        if isinstance(sigma, str):
+            if sigma != "friction":
+                raise ValueError(
+                    f"hard_binary_dispersion must be a velocity, 'friction' or "
+                    f"None, got '{sigma}'"
+                )
+        elif sigma is not None and not (sigma > 0 and np.isfinite(sigma)):
+            raise ValueError(
+                f"hard_binary_dispersion must be positive or None, got {sigma}"
+            )
 
     def to_core(self, units: UnitSystem, t_max: float):
         """The C++ settings, in internal units.
@@ -178,6 +207,12 @@ class IntegrationSettings:
         s.max_steps = int(self.max_steps)
         s.stepper = _STEPPERS[self.stepper]
         s.record_trajectory = bool(self.record_trajectory)
+        sigma = self.hard_binary_dispersion
+        if sigma == "friction":
+            s.hard_binary = _HARD_BINARY_FRICTION
+        elif sigma is not None:
+            s.hard_binary = _HARD_BINARY_FIXED
+            s.hard_binary_dispersion = float(sigma) / units.velocity
         return s
 
     def to_arrays(self, prefix: str = "settings/") -> dict:
@@ -222,7 +257,9 @@ class IntegrationSettings:
             value = np.asarray(arrays[key]).item()
             if value == "None":
                 value = None
-            elif f.name == "period" and isinstance(value, str):
+            elif f.name in ("period", "hard_binary_dispersion") and isinstance(
+                value, str
+            ):
                 try:
                     value = float(value)
                 except ValueError:
@@ -356,6 +393,28 @@ def _metadata(settings, potential, friction, period) -> dict:
     return meta
 
 
+def _check_hard_binary_settings(settings, friction) -> None:
+    """Check that the hard-binary criterion has a dispersion to work with.
+
+    Parameters
+    ----------
+    settings : IntegrationSettings
+        The settings.
+    friction : DynamicalFriction or None
+        The friction model.
+
+    Raises
+    ------
+    ValueError
+        If ``hard_binary_dispersion="friction"`` without dynamical friction.
+    """
+    if settings.hard_binary_dispersion == "friction" and friction is None:
+        raise ValueError(
+            "hard_binary_dispersion='friction' needs dynamical friction (or give "
+            "the dispersion as a velocity)"
+        )
+
+
 def _check_friction_stiffness(system, units, friction_core, period) -> None:
     """Warn if dynamical friction would make the equations of motion stiff.
 
@@ -429,6 +488,7 @@ def integrate(
         Trajectories, events and final states, in physical units.
     """
     settings = replace(settings or IntegrationSettings(), **overrides)
+    _check_hard_binary_settings(settings, friction)
     potential = _units_for(system, potential)
     units = potential.units
     period = estimate_period(system, potential, settings.period)
@@ -470,6 +530,8 @@ def integrate(
     )
     if result.stop_reason in ("step_limit", "integration_error"):
         logger.warning(f"Integration ended early: {result.stop_reason}")
+    if result.stop_reason == "hard_binary" and result.t_end == 0:
+        logger.warning("A binary was already hard at the start: nothing integrated")
     return result
 
 
@@ -523,6 +585,7 @@ def integrate_ensemble(
             "every system in an ensemble must have the same number of bodies"
         )
     settings = replace(settings or IntegrationSettings(), **overrides)
+    _check_hard_binary_settings(settings, friction)
     potential = _units_for(systems[0], potential)
     units = potential.units
     periods = np.array(

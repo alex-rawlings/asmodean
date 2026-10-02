@@ -38,11 +38,20 @@
 //   bound pair is kept). With the kCentre reference it must instead be beyond
 //   `ejection_radius` from the potential centre, receding, with positive
 //   specific energy in the potential plus the other bodies' field.
+// * Hard binary (optional): a pair of bodies -- assumed to be a massive black
+//   hole binary -- that is bound (Keplerian two-body energy) with semimajor
+//   axis a <= a_h = mu / (4 sigma^2) (G = 1; mu = m_i m_j / (m_i + m_j) is the
+//   reduced mass and sigma the background 1D velocity dispersion; Merritt
+//   2013, ch. 8) has become hard. The integration then stops. sigma is
+//   either fixed, or the dynamical-friction profile's dispersion at the
+//   pair's centre-of-mass distance from the potential centre. The test is
+//   made after every accepted step (and at t = 0), so the stopping time is
+//   resolved to one step.
 //
 // Integration stops at the first of: the time limit t_max; every body merged
 // into one; at most one body left after an ejection (no interactions remain);
-// the step limit; or an integration error (non-finite state or step-size
-// underflow).
+// a hard binary, if requested; the step limit; or an integration error
+// (non-finite state or step-size underflow).
 //
 // Energy bookkeeping. Each sample records the bodies' total energy E, the
 // cumulative energy carried away by events (E just before minus E just after
@@ -76,17 +85,20 @@ enum class StopReason : int {
     kBodiesEjected = 2,
     kStepLimit = 3,
     kIntegrationError = 4,
+    kHardBinary = 5,
 };
-enum class EventType : int { kMerger = 0, kEjection = 1 };
+enum class EventType : int { kMerger = 0, kEjection = 1, kHardBinary = 2 };
 enum class BodyStatus : int { kActive = 0, kMerged = 1, kEjected = 2 };
 enum class EjectionReference : int { kSystem = 0, kCentre = 1 };
 enum class StepperType : int { kFehlberg78 = 0, kDormandPrince5 = 1 };
+// Source of the velocity dispersion in the hard-binary criterion.
+enum class HardBinaryDispersion : int { kOff = 0, kFixed = 1, kFriction = 2 };
 
 inline const char* stop_reason_name(int r) {
     static const char* const names[] = {"time_limit", "all_merged",
                                         "bodies_ejected", "step_limit",
-                                        "integration_error"};
-    return (r >= 0 && r < 5) ? names[r] : "unknown";
+                                        "integration_error", "hard_binary"};
+    return (r >= 0 && r < 6) ? names[r] : "unknown";
 }
 
 // Every length/time/mass here is in the potential's internal (G = 1) units.
@@ -103,16 +115,26 @@ struct IntegrationSettings {
     long max_steps = 100000000;       // accepted-step limit
     int stepper = static_cast<int>(StepperType::kFehlberg78);
     bool record_trajectory = true;    // false: record only the first/last states
+    // Stop once a pair becomes hard: HardBinaryDispersion (kOff disables).
+    int hard_binary = static_cast<int>(HardBinaryDispersion::kOff);
+    double hard_binary_dispersion = 0.0;  // sigma for kFixed
 };
 
 struct Event {
     double time = 0.0;
     int type = 0;        // EventType
-    int body = -1;       // merger: surviving body; ejection: ejected body
-    int partner = -1;    // merger: absorbed body; ejection: -1
-    double mass = 0.0;   // mass of `body` after the event
-    std::array<double, 6> state{};  // merged body's / ejected body's state
-    double value = 0.0;  // merger: relative speed; ejection: escape energy
+    int body = -1;       // merger: surviving body; ejection: ejected body;
+                         // hard binary: the more massive member
+    int partner = -1;    // merger: absorbed body; ejection: -1; hard binary:
+                         // the other member
+    double mass = 0.0;   // mass of `body` after the event (hard binary: the
+                         // pair's total mass)
+    std::array<double, 6> state{};  // merged body's / ejected body's state /
+                                    // hard binary's centre-of-mass state
+    double value = 0.0;  // merger: relative speed; ejection: escape energy;
+                         // hard binary: semimajor axis
+    // Hard binary: the pair's (Keplerian) eccentricity; NaN for other events.
+    double eccentricity = std::numeric_limits<double>::quiet_NaN();
 };
 
 struct ScatteringResult {
@@ -181,6 +203,16 @@ public:
             throw std::invalid_argument("tolerances must be positive");
         if (!(settings_.step_factor > 0.0) || !(settings_.kernel_step_factor > 0.0))
             throw std::invalid_argument("step factors must be positive");
+        if (settings_.hard_binary == static_cast<int>(HardBinaryDispersion::kFixed) &&
+            !(settings_.hard_binary_dispersion > 0.0 &&
+              std::isfinite(settings_.hard_binary_dispersion)))
+            throw std::invalid_argument(
+                "the hard-binary dispersion must be positive and finite");
+        if (settings_.hard_binary == static_cast<int>(HardBinaryDispersion::kFriction) &&
+            !friction_.enabled())
+            throw std::invalid_argument(
+                "a hard-binary dispersion from the friction profile needs "
+                "dynamical friction");
         status_.assign(n_, static_cast<int>(BodyStatus::kActive));
         merged_into_.assign(n_, -1);
         final_time_.assign(n_, 0.0);
@@ -216,6 +248,9 @@ private:
 
     bool mergers_enabled() const { return settings_.collision_distance > 0.0; }
     bool ejections_enabled() const { return settings_.ejection_radius > 0.0; }
+    bool hard_binary_enabled() const {
+        return settings_.hard_binary != static_cast<int>(HardBinaryDispersion::kOff);
+    }
 
     void rebuild_active() {
         active_.clear();
@@ -470,6 +505,71 @@ private:
         return any;
     }
 
+    // Look for a hard binary among the active bodies (body_state_). On
+    // success, records a kHardBinary event for the hardest such pair (smallest
+    // a / a_h), with its semimajor axis and eccentricity, at time t and
+    // returns true.
+    bool find_hard_binary(double t) {
+        int bi = -1, bj = -1;
+        double best_ratio = 1.0, best_a = 0.0, best_e = 0.0;
+        std::array<double, 6> best_com{};
+        for (std::size_t i = 0; i < active_.size(); ++i) {
+            for (std::size_t j = i + 1; j < active_.size(); ++j) {
+                const int a = active_.index[i], b = active_.index[j];
+                const double m = mass_[a] + mass_[b];
+                double r2 = 0.0, v2 = 0.0, dx[3], dv[3];
+                for (int c = 0; c < 3; ++c) {
+                    dx[c] = body_state_[a][c] - body_state_[b][c];
+                    dv[c] = body_state_[a][3 + c] - body_state_[b][3 + c];
+                    r2 += dx[c] * dx[c];
+                    v2 += dv[c] * dv[c];
+                }
+                const double eps = 0.5 * v2 - m / std::sqrt(r2);
+                if (!(eps < 0.0)) continue;
+                const double sma = -0.5 * m / eps;
+                std::array<double, 6> com{};
+                for (int c = 0; c < 6; ++c)
+                    com[c] = (mass_[a] * body_state_[a][c] +
+                              mass_[b] * body_state_[b][c]) / m;
+                double sigma = settings_.hard_binary_dispersion;
+                if (settings_.hard_binary ==
+                    static_cast<int>(HardBinaryDispersion::kFriction))
+                    sigma = friction_.dispersion(
+                        std::sqrt(com[0] * com[0] + com[1] * com[1] + com[2] * com[2]));
+                const double a_hard = mass_[a] * mass_[b] / m / (4.0 * sigma * sigma);
+                const double ratio = sma / a_hard;
+                if (ratio <= best_ratio) {
+                    best_ratio = ratio;
+                    best_a = sma;
+                    best_com = com;
+                    // e^2 = 1 + 2 eps L^2 / m^2, L the specific angular momentum.
+                    const double lx = dx[1] * dv[2] - dx[2] * dv[1];
+                    const double ly = dx[2] * dv[0] - dx[0] * dv[2];
+                    const double lz = dx[0] * dv[1] - dx[1] * dv[0];
+                    const double l2 = lx * lx + ly * ly + lz * lz;
+                    best_e = std::sqrt(std::max(0.0, 1.0 + 2.0 * eps * l2 / (m * m)));
+                    const bool a_first =
+                        mass_[a] > mass_[b] || (mass_[a] == mass_[b] && a < b);
+                    bi = a_first ? a : b;
+                    bj = a_first ? b : a;
+                }
+            }
+        }
+        if (bi < 0) return false;
+        Event ev;
+        ev.time = t;
+        ev.type = static_cast<int>(EventType::kHardBinary);
+        ev.body = bi;
+        ev.partner = bj;
+        ev.mass = mass_[bi] + mass_[bj];
+        ev.state = best_com;
+        ev.value = best_a;
+        ev.eccentricity = best_e;
+        result_.events.push_back(ev);
+        unrecorded_event_ = true;
+        return true;
+    }
+
     // Stop once no interactions remain: every body gone, or (starting from
     // more than one) a single body left.
     bool finished(int& reason) const {
@@ -508,6 +608,10 @@ private:
         bool changed = mergers_enabled() && handle_mergers(0.0);
         if (ejections_enabled() && handle_ejections(0.0)) changed = true;
         if (changed && finished(reason)) stopped = true;
+        if (!stopped && hard_binary_enabled() && find_hard_binary(0.0)) {
+            reason = static_cast<int>(StopReason::kHardBinary);
+            stopped = true;
+        }
 
         State x = pack();
         EquationsOfMotion sys{pot_, friction_, active_, false, {}};
@@ -592,6 +696,13 @@ private:
                                                         settings_.rel_tol);
                 if (finished(reason)) break;
                 dt = std::min(dt, step_cap(x));
+            }
+            if (hard_binary_enabled()) {
+                unpack(x);
+                if (find_hard_binary(t)) {
+                    reason = static_cast<int>(StopReason::kHardBinary);
+                    break;
+                }
             }
             if (t == t_target) {
                 unpack(x);

@@ -57,6 +57,7 @@ from .analysis import (
     bound_pairs,
     bound_pairs_from_state,
     classify_outcome,
+    hard_binary_semimajor_axis,
     orbital_elements,
     pair_elements,
 )
@@ -94,6 +95,7 @@ __all__ = [
     "bound_pairs_from_state",
     "pair_elements",
     "classify_outcome",
+    "hard_binary_semimajor_axis",
     "IntegrationSettings",
     "ScatteringSetup",
     "estimate_period",

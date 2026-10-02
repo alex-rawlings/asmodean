@@ -15,6 +15,10 @@ binary-single scattering:
 * ``"ionisation"`` -- no pair is bound at the end;
 * ``"unbound"`` -- no pair was bound at the start.
 
+:func:`hard_binary_semimajor_axis` gives the semimajor axis ``a_h`` below
+which a massive black hole binary is hard (the criterion behind
+``IntegrationSettings.hard_binary_dispersion``).
+
 :attr:`Outcome.resolved` records whether the interaction was over when the
 integration stopped (an ejection or merger ended it) or merely ran out of time.
 """
@@ -280,6 +284,34 @@ def pair_elements(
             )
         )
     return out
+
+
+def hard_binary_semimajor_axis(mass_1, mass_2, dispersion, G: float):
+    """Semimajor axis below which a massive black hole binary is hard.
+
+    ``a_h = G mu / (4 sigma^2)``, with ``mu = m_1 m_2 / (m_1 + m_2)`` the
+    reduced mass and ``sigma`` the 1D velocity dispersion of the surrounding
+    stars (Merritt 2013, *Dynamics and Evolution of Galactic Nuclei*,
+    ch. 8).
+
+    Parameters
+    ----------
+    mass_1, mass_2 : float or array-like of float
+        The binary's masses.
+    dispersion : float or array-like of float
+        Background 1D velocity dispersion.
+    G : float
+        Gravitational constant.
+
+    Returns
+    -------
+    a_h : float or numpy.ndarray
+        The hard-binary semimajor axis.
+    """
+    mass_1 = np.asarray(mass_1, dtype=np.float64)
+    mass_2 = np.asarray(mass_2, dtype=np.float64)
+    mu = mass_1 * mass_2 / (mass_1 + mass_2)
+    return G * mu / (4.0 * np.asarray(dispersion, dtype=np.float64) ** 2)
 
 
 @dataclass(frozen=True)

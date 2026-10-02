@@ -19,7 +19,8 @@ python:
    Integrates a saved setup and writes the :class:`~asmodean.ScatteringResult`
    (``.npz``). Any integration setting can be overridden on the command line
    (``--n-periods``, ``--period``, ``--n-samples``, ``--collision-distance``,
-   ``--ejection-radius``, ``--ejection-reference``, ``--rel-tol``,
+   ``--ejection-radius``, ``--ejection-reference``,
+   ``--hard-binary-dispersion``, ``--rel-tol``,
    ``--abs-tol``, ``--stepper``), and ``--no-friction`` switches friction off.
 
 ``analyse.py``

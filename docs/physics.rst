@@ -80,12 +80,37 @@ specific energy in the potential plus the other bodies' softened field.
 Several candidates in one step are removed farthest first, re-testing the rest
 after each removal.
 
+Hard binaries
+-------------
+
+Optionally (``hard_binary_dispersion``), the integration stops once a pair of
+bodies -- assumed to be a massive black hole binary -- becomes *hard*: it is
+bound (Keplerian two-body energy, as in :mod:`asmodean.analysis`) with
+semimajor axis
+
+.. code-block:: text
+
+   a <= a_h = G mu / (4 sigma^2),   mu = m_1 m_2 / (m_1 + m_2),
+
+where ``sigma`` is the 1D velocity dispersion of the background (Merritt 2013,
+*Dynamics and Evolution of Galactic Nuclei*, ch. 8;
+:func:`~asmodean.hard_binary_semimajor_axis`). ``sigma`` is either a fixed
+velocity or, with ``hard_binary_dispersion="friction"``, the
+dynamical-friction profile's dispersion at the pair's centre-of-mass distance
+from the potential centre. Every active pair is tested after every accepted
+step (so the stop is resolved to one step) and at the start, so a binary that
+is already hard stops the integration at once. If several pairs qualify, the
+one with the smallest ``a / a_h`` is reported, as a ``"hard_binary"`` event
+(``result.hard_binary``) holding the pair, its total mass, centre-of-mass
+state, semimajor axis and eccentricity (both Keplerian).
+
 Stopping
 --------
 
 The integration stops at the first of: the time limit; every body merged into
 one (``"all_merged"``); at most one body left after an ejection
-(``"bodies_ejected"``); the step limit (``"step_limit"``); or a non-finite
+(``"bodies_ejected"``); a binary becoming hard, if requested
+(``"hard_binary"``); the step limit (``"step_limit"``); or a non-finite
 state or step-size underflow (``"integration_error"``). A single body alone
 from the start runs to the time limit.
 
