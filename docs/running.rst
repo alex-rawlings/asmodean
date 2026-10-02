@@ -2,7 +2,8 @@ Running the driver scripts
 ==========================
 
 Three scripts in ``scripts/`` cover the whole workflow without writing any
-python:
+python (a fourth, ``impact_parameter_survey.py``, runs a survey of a
+snapshot's black holes; see below):
 
 .. code-block:: bash
 
@@ -32,6 +33,55 @@ python:
    by time on one shared scale (``--no-time-colour`` colours by body);
    ``--frame centre_of_mass`` plots them relative to the bodies' centre of
    mass.
+
+Impact-parameter survey of a snapshot's black holes
+---------------------------------------------------
+
+``impact_parameter_survey.py`` asks how the eccentricity of a forming massive
+black hole binary depends on the pair's impact parameter:
+
+.. code-block:: bash
+
+   python scripts/impact_parameter_survey.py snap_030.hdf5 -o survey --potential-from stars
+   python scripts/impact_parameter_survey.py --plot-only survey/survey.npz
+
+It reads a Gadget-4 snapshot, prepares it with lanfear (centred with
+``--centre``, static figure) and builds an SCF potential (``--n-max``,
+``--l-max``) from every field particle (``--potential-from all``, default) or
+from the stars only (``--potential-from stars``). The snapshot's two most
+massive black holes (or ``--bh-ids``) are integrated as bodies (softening
+``--bh-softening``), with dynamical friction from the potential's isotropic
+Jeans profile (``--friction-mode``, default ``"individual"`` so the pair can
+sink and bind; ``--coulomb-logarithm``; ``--friction-range``).
+
+The impact parameter is that of the pair's relative orbit at the snapshot
+time, ``b = |r x v| / |v|``. Each run rotates the relative velocity within the
+orbital plane (keeping its magnitude and an approaching radial velocity) to
+set ``b``, so the positions, energy and centre-of-mass motion stay those of
+the snapshot. The impact parameters are ``--impact-parameters`` (physical
+lengths) or ``--n-b`` values spanning ``--b-range`` (in units of the initial
+separation, default 0 to 0.9). Only impact parameters deflecting the pair by at
+least ``--min-deflection`` (default 30 degrees), ``b <= b90 / tan(theta_min /
+2)`` with ``b90 = G (m_1 + m_2) / v^2``, are kept: the ``--n-b`` samples are
+spread over that part of ``--b-range``, and explicit impact parameters beyond
+it are dropped. All runs are integrated in parallel for
+``--n-periods`` circular periods at the pair's initial radius, stopping when
+the binary becomes hard; ``--hard-dispersion`` sets ``sigma`` in
+``a_h = G mu / (4 sigma^2)``: a velocity, ``"influence"`` (default; the
+dispersion of the potential's particles within the influence radius, which
+encloses twice the pair's mass) or ``"friction"`` (local, from the friction
+profile).
+
+The output directory holds ``survey.npz`` (impact parameters, stop reasons,
+and the time, semimajor axis and eccentricity at hardening, NaN where the
+binary did not become hard), ``setup.npz`` (the unperturbed setup, for
+``run_scattering.py``), ``runs/run_XXX.npz`` (each result, for ``analyse.py``)
+and ``impact_parameter_eccentricity.png``, the eccentricity at hardening
+against the two-body deflection angle ``2 arctan(b90 / b)``, where
+``b90 = G (m_1 + m_2) / v^2`` for the pair's relative speed ``v`` at the
+snapshot (the same in every run; stored in ``survey.npz``). The top axis gives
+the impact parameter in units of the initial separation, and runs that did not
+harden are marked along the bottom.
 
 The configuration file
 ----------------------

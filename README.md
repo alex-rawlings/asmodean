@@ -45,6 +45,8 @@ Usage, the physics and the API reference are in [`docs/`](docs/) (rendered to th
 python scripts/make_system.py scripts/example_config.toml -o setup.npz   # construct
 python scripts/run_scattering.py setup.npz -o result.npz                 # integrate + save
 python scripts/analyse.py result.npz --figdir figures                    # analyse
+# SMBH binary eccentricity at hardening vs deflection angle, from a snapshot:
+python scripts/impact_parameter_survey.py snap.hdf5 -o survey --potential-from stars
 ```
 
 or from python:
